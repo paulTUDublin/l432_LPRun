@@ -14,18 +14,17 @@ void selectAlternateFunction (GPIO_TypeDef *Port, uint32_t BitNumber, uint32_t A
 void initSerial(uint32_t baudrate); // Need this
 void eputc(char c); // Need this
 int buttonPressed(void);
+void initMSIClock(uint32_t MSIClockRange);
+void enterLPRun(void);
+void exitLPRun(void);
 u_int32_t milliseconds = 0;
 u_int32_t millis();
 int main()
 {
     setup();
-    int count = 0;
-    int currentButton = 0;
-    int previousButton = 0;
-    SystemCoreClockUpdate();
-    uint32_t clk = SystemCoreClock;
+    volatile uint32_t clk = SystemCoreClock;
     
-    SysTick->LOAD = 80000-1; // Systick clock = 80MHz. 80000000/44100 = 1814
+    SysTick->LOAD = 80000-1; // Systick clock = 80MHz. 80000000/1000 = 80000
 	SysTick->CTRL = 7; // enable systick counter and its interrupts
 	SysTick->VAL = 10; // start from a low number so we don't wait for ages for first interrupt
 	
@@ -33,67 +32,28 @@ int main()
 
     while(1)
     {
-        printf("System clock is %ld \r\n",clk);
-
-        currentButton = buttonPressed();    // Get curretn state of button press
+        // Exit low-power run (LP run) mode
+        exitLPRun();
         
-        if (previousButton == 0 && currentButton == 1) // Only enter the if statement if there is a rising edge
-        {
-            GPIOB->ODR |= (1 << 3);     // Turn on the LED
-            count++;
-            printf("Button count: %d\r\n",count);
-
-            // Enter LP run mode
-            // Set Bit 13 of FLASH_ACR (write protecte see ref manual)
-            FLASH->PDKEYR = 0x04152637;
-            FLASH->PDKEYR = 0xFAFBFCFD; 
-            FLASH->ACR |= (1 << 13); 
-            
-            // Decrease system clock to below 2 Mhz
-
-            // Turn off PLL first? Not required.
-            RCC->CR &= ~(1 << 24); // Turn off PLL
-
-            // Enable internal oscillator for MSI
-            RCC->CR |= (1 << 0);            // Enable MSI (multi-speed internal oscillator)
-            while(!(RCC->CR & (1 << 1)));   // Wait till MSI ready bit is set
-            
-            // Configure MSI clock to 1 MHz
-            RCC->CR |= (1 << 3);        // Allows MSI clock range to set by MSIRANGW bits in CR register
-            RCC->CR &= ~(0b1111 << 4);  // Clear the MSIRANGE bits 
-            RCC->CR |= (3 << 4);        // Set MSIRANGE to mode 4 (1 MHz)
-
-            // Select MSI as system clock
-            RCC->CFGR &= ~(0b11 << 0);      // Clear system clock switch bits
-            RCC->CFGR |= (0b00 << 0);       // Set system switch bits (SW bits, 00: MSI as system clock)
-
-            while( (RCC->CFGR & (0b11 << 2)) != 0); // Wait until MSI is set as system clock
-            
-            // Update system clock
-            SystemCoreClockUpdate();
-            clk = SystemCoreClock;
-
-            // Force regulator into low-power mode (PWR->CR1, Bit 14), requires system clokc to be < 2 MHz
-            PWR->CR1 |= (1u << 14);
-
-            
-            initSerial(9600);
-            
-            
-
-        }   
-        else
-        {
-            GPIOB->ODR &= ~(1 << 3);    // Turns off the LED
-        }  
+        initSerial(9600);                           // Reset serial clock baudrate 
+        clk = SystemCoreClock;
+        printf("System clock is %ld \r\n",clk);     // Print current value of system clock
         
-        previousButton = currentButton;     // Store previous state
+        // Enter low-power run (LP run) mode
+        // Section 5.3 of the reference manual (RM0394) outlines the 7 low-power modes
+        // Optional step is to power down FLASH->ACR RUN_PD bit
+        enterLPRun();
+
+        initSerial(9600);                           // Reset serial clock baudrate 
+        clk = SystemCoreClock;
+        printf("System clock is %ld \r\n",clk);     // Print current value of system clock
 
     }
 }
 void setup(void)
 {
-    initClocks();
+    // initClocks();
+    initMSIClock(4);
     RCC->AHB2ENR |= (1 << 0) | (1 << 1); // turn on GPIOA and GPIOB
     initSerial(9600);
     pinMode(GPIOB,3,1);
@@ -154,7 +114,6 @@ void initSerial(uint32_t baudrate)
 
 
     RCC->APB1ENR1 |= (1 << 17); // turn on USART2
-
     SystemCoreClockUpdate();
 	// const uint32_t CLOCK_SPEED=80000000;
     const uint32_t CLOCK_SPEED=SystemCoreClock;
@@ -244,4 +203,69 @@ void SysTick_Handler(void)
 uint32_t millis()
 {
     return milliseconds;
+}
+void initMSIClock(uint32_t MSIClockRange)
+{
+    // Enter LP run mode
+    // The purpose of this function is to configure the multi-speed internal (MSI) clock
+
+    // Optional: Set Bit 13 of FLASH_ACR (write protected see ref manual 3.7.1)
+    // FLASH->PDKEYR = 0x04152637;
+    // FLASH->PDKEYR = 0xFAFBFCFD; 
+    // FLASH->ACR |= (1 << 13); 
+
+    // Enable internal oscillator for MSI
+    RCC->CR |= (1 << 0);            // Enable MSI (multi-speed internal oscillator)
+    while(!(RCC->CR & (1 << 1)));   // Wait till MSI ready bit is set
+    
+    // Configure MSI clock to 1 MHz
+    // MSIRANGE values: 0:100 kHz, 1:200 kHz, 2:400 kHz, 3:800 kHz, 
+    //                  4:1 MHz, 5:2 MHz, 6:4 MHz (reset value), 7:8 MHz,
+    //                  8:16 MHz, 9:32 MHz, 10:32 MHz, 11:48 MHz, 
+    RCC->CR |= (1 << 3);                // Allows MSI clock range to set by MSIRANGe bits in CR register
+    RCC->CR &= ~(0b1111 << 4);          // Clear the MSIRANGE bits [7:4]
+    RCC->CR |= (MSIClockRange << 4);    // Set MSIRANGE to mode MSIClockRange
+
+    // Select MSI as system clock
+    RCC->CFGR &= ~(0b11 << 0);      // Clear system clock switch bits
+    RCC->CFGR |= (0b00 << 0);       // Set system switch bits (SW bits, 00: MSI as system clock)
+
+    while( (RCC->CFGR & (0b11 << 2)) != 0); // Wait until MSI is set as system clock
+    
+    // Update system clock varibale
+    SystemCoreClockUpdate();
+
+    // Force regulator into low-power mode (PWR->CR1, Bit 14), requires system clock to be < 2 MHz
+    // When this bit is set, the regulator is switched from main mode (MR) to low-power mode (LPR).
+    // Does it stay at 1 after a set?
+    // PWR->CR1 |= (1 << 14);
+
+    // Some additional notes
+    // PWR->SR2 Bit 8 REGLPS, is low-power regulator ready adter power-on reset or standyby/shutdown
+    // PWR->SR2 Bit 9 REGLPF, set by hardware when MCU is in low-power run mode. Remains at 1 until main mode.
+    // if (HAL_IS_BIT_SET(PWR->SR2, PWR_SR2_REGLPF) == RESET) // Found in stm32l4xx_hal_pwr.c
+    // {
+    //   HAL_PWREx_EnableLowPowerRunMode();
+    // }
+    // void HAL_PWREx_EnableLowPowerRunMode(void) // Found in stm32l4xx_hal_pwr_ex.c
+    // {
+    // /* Set Regulator parameter */
+    // SET_BIT(PWR->CR1, PWR_CR1_LPR);
+    // }
+    
+     
+}
+void enterLPRun(void)
+{
+    // Section 5.3 of the reference manual (RM0394) outlines the 7 low-power modes
+    // Optional step is to power down FLASH->ACR RUN_PD bit
+    initMSIClock(4); // Configure MSI at 1 Mhz (mode 4), see MSIRangeTable for corresponding values
+    PWR->CR1 |= (1 << 14); // Force regulator into low-power mode LPR, system clock to be < 2 MHz
+}
+void exitLPRun(void)
+{
+    // Section 5.3 of the reference manual (RM0394) outlines the 7 low-power modes
+    PWR->CR1 &= ~(1 << 14);         // Force regulator into main mode LPR
+    while(PWR->SR2 & (1 << 1));     // Wait until REGLPF = 0 i.e. regulator is in main mode
+    initMSIClock(7); // Configure MSI at 1 Mhz (mode 4), see MSIRangeTable for corresponding values
 }
