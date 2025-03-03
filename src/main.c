@@ -203,11 +203,6 @@ void initMSIClock(uint32_t MSIClockRange)
     // Enter LP run mode
     // The purpose of this function is to configure the multi-speed internal (MSI) clock
 
-    // Optional: Set Bit 13 of FLASH_ACR (write protected see ref manual 3.7.1)
-    // FLASH->PDKEYR = 0x04152637;
-    // FLASH->PDKEYR = 0xFAFBFCFD; 
-    // FLASH->ACR |= (1 << 13); 
-
     // Enable internal oscillator for MSI
     RCC->CR |= (1 << 0);            // Enable MSI (multi-speed internal oscillator)
     while(!(RCC->CR & (1 << 1)));   // Wait till MSI ready bit is set
@@ -228,24 +223,6 @@ void initMSIClock(uint32_t MSIClockRange)
     
     // Update system clock varibale
     SystemCoreClockUpdate();
-
-    // Force regulator into low-power mode (PWR->CR1, Bit 14), requires system clock to be < 2 MHz
-    // When this bit is set, the regulator is switched from main mode (MR) to low-power mode (LPR).
-    // Does it stay at 1 after a set?
-    // PWR->CR1 |= (1 << 14);
-
-    // Some additional notes
-    // PWR->SR2 Bit 8 REGLPS, is low-power regulator ready adter power-on reset or standyby/shutdown
-    // PWR->SR2 Bit 9 REGLPF, set by hardware when MCU is in low-power run mode. Remains at 1 until main mode.
-    // if (HAL_IS_BIT_SET(PWR->SR2, PWR_SR2_REGLPF) == RESET) // Found in stm32l4xx_hal_pwr.c
-    // {
-    //   HAL_PWREx_EnableLowPowerRunMode();
-    // }
-    // void HAL_PWREx_EnableLowPowerRunMode(void) // Found in stm32l4xx_hal_pwr_ex.c
-    // {
-    // /* Set Regulator parameter */
-    // SET_BIT(PWR->CR1, PWR_CR1_LPR);
-    // }
     
      
 }
@@ -253,8 +230,17 @@ void enterLPRun(void)
 {
     // Section 5.3 of the reference manual (RM0394) outlines the 7 low-power modes
     // Optional step is to power down FLASH->ACR RUN_PD bit
-    initMSIClock(4); // Configure MSI at 1 Mhz (mode 4), see MSIRangeTable for corresponding values
-    PWR->CR1 |= (1 << 14); // Force regulator into low-power mode LPR, system clock to be < 2 MHz
+    // Optional: Set Bit 13 of FLASH_ACR (write protected see ref manual 3.7.1)
+    // FLASH->PDKEYR = 0x04152637;
+    // FLASH->PDKEYR = 0xFAFBFCFD; 
+    // FLASH->ACR |= (1 << 13); 
+
+    // Configure MSI at 1 Mhz (mode 4), see MSIRangeTable for corresponding values
+    initMSIClock(4); 
+
+    // Force regulator into low-power mode LPR, system clock to be <= 2 MHz
+    PWR->CR1 |= (1 << 14);
+    
 }
 void exitLPRun(void)
 {
