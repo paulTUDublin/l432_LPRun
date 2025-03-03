@@ -30,30 +30,24 @@ int main()
 	
     __asm(" cpsie i "); // enable interrupts globally
 
+    // Choose running mode before entering main while loop
+    // Leave all options to maintain a 80 MHz clock    
+    // Section 5.3 of the reference manual (RM0394) outlines the 7 low-power modes
+    // enterLPRun(); // Enter low-power run (LP run) mode
+
+    // Update baud rate clock as system clock changes
+    initSerial(9600);                           // Reset serial clock baudrate 
+    clk = SystemCoreClock;                      // Update clk varibable
+    printf("System clock is %ld \r\n",clk);     // Print current value of system clock
+
     while(1)
     {
-        // Exit low-power run (LP run) mode
-        exitLPRun();
-        
-        initSerial(9600);                           // Reset serial clock baudrate 
-        clk = SystemCoreClock;
-        printf("System clock is %ld \r\n",clk);     // Print current value of system clock
-        
-        // Enter low-power run (LP run) mode
-        // Section 5.3 of the reference manual (RM0394) outlines the 7 low-power modes
-        // Optional step is to power down FLASH->ACR RUN_PD bit
-        enterLPRun();
-
-        initSerial(9600);                           // Reset serial clock baudrate 
-        clk = SystemCoreClock;
-        printf("System clock is %ld \r\n",clk);     // Print current value of system clock
 
     }
 }
 void setup(void)
 {
-    // initClocks();
-    initMSIClock(4);
+    initClocks();
     RCC->AHB2ENR |= (1 << 0) | (1 << 1); // turn on GPIOA and GPIOB
     initSerial(9600);
     pinMode(GPIOB,3,1);
