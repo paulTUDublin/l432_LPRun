@@ -42,7 +42,8 @@ int main()
 
     while(1)
     {
-
+        // __asm("WFI");
+        // __WFI();
     }
 }
 void setup(void)
@@ -231,12 +232,12 @@ void enterLPRun(void)
     // Section 5.3 of the reference manual (RM0394) outlines the 7 low-power modes
     // Optional step is to power down FLASH->ACR RUN_PD bit
     // Optional: Set Bit 13 of FLASH_ACR (write protected see ref manual 3.7.1)
-    // FLASH->PDKEYR = 0x04152637;
-    // FLASH->PDKEYR = 0xFAFBFCFD; 
-    // FLASH->ACR |= (1 << 13); 
+    FLASH->PDKEYR = 0x04152637;
+    FLASH->PDKEYR = 0xFAFBFCFD; 
+    FLASH->ACR |= (1 << 13); 
 
     // Configure MSI at 1 Mhz (mode 4), see MSIRangeTable for corresponding values
-    initMSIClock(4); 
+    initMSIClock(7); 
 
     // Force regulator into low-power mode LPR, system clock to be <= 2 MHz
     PWR->CR1 |= (1 << 14);
@@ -247,5 +248,13 @@ void exitLPRun(void)
     // Section 5.3 of the reference manual (RM0394) outlines the 7 low-power modes
     PWR->CR1 &= ~(1 << 14);         // Force regulator into main mode LPR
     while(PWR->SR2 & (1 << 1));     // Wait until REGLPF = 0 i.e. regulator is in main mode
-    initMSIClock(7); // Configure MSI at 1 Mhz (mode 4), see MSIRangeTable for corresponding values
+    initMSIClock(7);                // Configure MSI at 1 Mhz (mode 4), see MSIRangeTable for corresponding values
+}
+void enterSleepMode(void)
+{
+    // WFI (Wait for Interrupt) or WFE (Wait for Event) while:
+    // – SLEEPDEEP = 0 (SCR?)
+    // – No interrupt (for WFI) or event (for WFE) is pending
+    // Refer to the Cortex®-M4 System Control register.
+
 }
